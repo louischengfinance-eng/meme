@@ -8,9 +8,10 @@
 │  (Frontend) │         │   Frontend   │         │   (Backend)     │
 └─────────────┘         └──────────────┘         └─────────────────┘
                                                            │
+                                                   HMAC Auth
                                                            ▼
                                                   ┌─────────────────┐
-                                                  │  Binance API    │
+                                                  │  Bybit V5 API   │
                                                   │  (External)     │
                                                   └─────────────────┘
 ```
@@ -24,17 +25,24 @@
    - CORS enabled for frontend communication
    - In-memory data caching
 
-2. **Binance API Proxy**
-   - Fetches from `https://fapi.binance.com/fapi/v1/ticker/24hr`
+2. **Bybit API Integration**
+   - Fetches from `https://api.bybit.com/v5/market/tickers?category=linear`
+   - HMAC SHA256 authentication for higher rate limits
    - 4-second cache to reduce API calls
    - Filters USDT perpetual contracts only
+   - Converts Bybit response format to normalized format
 
-3. **Price History Tracker**
+3. **Authentication Layer**
+   - HMAC SHA256 signature generation
+   - Format: `timestamp + api_key + recv_window + query_params`
+   - Secure credential storage in environment variables
+
+4. **Price History Tracker**
    - Maintains 1-hour rolling window of prices
    - Map structure: `symbol -> PriceHistory[]`
    - Automatic cleanup of old data
 
-4. **Alert Detection System**
+5. **Alert Detection System**
    - Monitors top 20 gainers
    - Detects ≥3% drops within 1 hour
    - Compares current price vs 1-hour-ago price
@@ -44,7 +52,9 @@
 1. Client requests `/api/tickers`
 2. Check if cached data is valid (<4 seconds old)
 3. If cache expired:
-   - Fetch fresh data from Binance
+   - Generate HMAC signature with timestamp
+   - Fetch fresh data from Bybit with authentication headers
+   - Convert Bybit format to normalized format
    - Update price history
    - Update cache
 4. Process data:

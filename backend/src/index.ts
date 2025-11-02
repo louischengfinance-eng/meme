@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -12,10 +13,35 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Binance Futures API endpoint
-const BINANCE_API_URL = 'https://fapi.binance.com/fapi/v1/ticker/24hr';
+// Bybit API configuration
+const BYBIT_API_URL = 'https://api.bybit.com';
+const BYBIT_API_KEY = process.env.BYBIT_API_KEY || '';
+const BYBIT_API_SECRET = process.env.BYBIT_API_SECRET || '';
 
-// Cache configuration
+// Bybit API response interfaces
+interface BybitTicker {
+  symbol: string;
+  lastPrice: string;
+  price24hPcnt: string;
+  highPrice24h: string;
+  lowPrice24h: string;
+  volume24h: string;
+  turnover24h: string;
+  openPrice24h?: string;
+  prevPrice24h?: string;
+}
+
+interface BybitResponse {
+  retCode: number;
+  retMsg: string;
+  result: {
+    category: string;
+    list: BybitTicker[];
+  };
+  time: number;
+}
+
+// Normalized ticker data interface
 interface TickerData {
   symbol: string;
   lastPrice: string;
@@ -27,13 +53,6 @@ interface TickerData {
   openPrice: string;
   closePrice: string;
   priceChange: string;
-  weightedAvgPrice: string;
-  lastQty: string;
-  openTime: number;
-  closeTime: number;
-  firstId: number;
-  lastId: number;
-  count: number;
 }
 
 interface CachedData {
@@ -52,6 +71,16 @@ const CACHE_DURATION = 4000; // 4 seconds (fetch every 5 seconds, but allow 4s c
 const HISTORY_DURATION = 3600000; // 1 hour in milliseconds
 
 let cachedData: CachedData | null = null;
+
+// Generate Bybit API signature
+// For GET requests: timestamp + api_key + recv_window + queryString
+function generateSignature(timestamp: string, recvWindow: string, params: string): string {
+  const message = timestamp + BYBIT_API_KEY + recvWindow + params;
+  return crypto
+    .createHmac('sha256', BYBIT_API_SECRET)
+    .update(message)
+    .digest('hex');
+}
 
 // Clean up old price history data
 function cleanupOldHistory() {
@@ -121,15 +150,73 @@ function detectAlerts(tickers: TickerData[], topGainers: TickerData[]): Map<stri
   return alerts;
 }
 
-// Fetch data from Binance API
-async function fetchBinanceData(): Promise<TickerData[]> {
+// Fetch data from Bybit API
+async function fetchBybitData(): Promise<TickerData[]> {
   try {
-    const response = await axios.get<TickerData[]>(BINANCE_API_URL, {
-      timeout: 10000,
+    const timestamp = Date.now().toString();
+    const endpoint = '/v5/market/tickers';
+    const params = 'category=linear';
+
+    // For public endpoints, authentication is optional but can provide higher rate limits
+    const headers: any = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add authentication if API key is provided
+    if (BYBIT_API_KEY && BYBIT_API_SECRET) {
+      const recvWindow = '5000';
+      const signature = generateSignature(timestamp, recvWindow, params);
+      headers['X-BAPI-API-KEY'] = BYBIT_API_KEY;
+      headers['X-BAPI-TIMESTAMP'] = timestamp;
+      headers['X-BAPI-SIGN'] = signature;
+      headers['X-BAPI-RECV-WINDOW'] = recvWindow;
+    }
+
+    const response = await axios.get<BybitResponse>(
+      `${BYBIT_API_URL}${endpoint}?${params}`,
+      {
+        headers,
+        timeout: 10000,
+      }
+    );
+
+    if (response.data.retCode !== 0) {
+      throw new Error(`Bybit API error: ${response.data.retMsg}`);
+    }
+
+    // Convert Bybit format to normalized format
+    const normalizedData: TickerData[] = response.data.result.list.map(ticker => {
+      // Calculate price change percent (Bybit gives it as decimal, e.g., 0.0234 = 2.34%)
+      const priceChangePercent = (parseFloat(ticker.price24hPcnt) * 100).toString();
+
+      // Calculate open price if not provided
+      const openPrice = ticker.prevPrice24h || ticker.openPrice24h ||
+        (parseFloat(ticker.lastPrice) / (1 + parseFloat(ticker.price24hPcnt))).toString();
+
+      // Calculate price change
+      const priceChange = (parseFloat(ticker.lastPrice) - parseFloat(openPrice)).toString();
+
+      return {
+        symbol: ticker.symbol,
+        lastPrice: ticker.lastPrice,
+        priceChangePercent: priceChangePercent,
+        highPrice: ticker.highPrice24h,
+        lowPrice: ticker.lowPrice24h,
+        volume: ticker.volume24h,
+        quoteVolume: ticker.turnover24h, // turnover is the quote volume in USDT
+        openPrice: openPrice,
+        closePrice: ticker.lastPrice, // lastPrice is the close price
+        priceChange: priceChange,
+      };
     });
-    return response.data;
+
+    return normalizedData;
   } catch (error) {
-    console.error('Error fetching Binance data:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('Error fetching Bybit data:', error.response?.data || error.message);
+    } else {
+      console.error('Error fetching Bybit data:', error);
+    }
     throw error;
   }
 }
@@ -146,7 +233,7 @@ app.get('/api/tickers', async (req: Request, res: Response) => {
     }
 
     // Fetch fresh data
-    const data = await fetchBinanceData();
+    const data = await fetchBybitData();
 
     // Update cache
     cachedData = {
@@ -210,11 +297,18 @@ app.get('/api/health', (req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     cacheAge: cachedData ? Date.now() - cachedData.timestamp : null,
     historySize: priceHistory.size,
+    apiProvider: 'Bybit',
+    authenticated: !!(BYBIT_API_KEY && BYBIT_API_SECRET),
   });
 });
 
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📡 Binance API proxy ready`);
+  console.log(`📡 Bybit API proxy ready`);
+  if (BYBIT_API_KEY && BYBIT_API_SECRET) {
+    console.log(`🔑 Authenticated with Bybit API`);
+  } else {
+    console.log(`⚠️  Running without Bybit API authentication (public endpoints only)`);
+  }
 });

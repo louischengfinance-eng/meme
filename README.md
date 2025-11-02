@@ -1,15 +1,16 @@
 # 🚀 Crypto Monitoring Dashboard
 
-A real-time cryptocurrency monitoring system that tracks all Binance USDT perpetual contracts with alerts for rapid price movements.
+A real-time cryptocurrency monitoring system that tracks all Bybit USDT perpetual contracts with alerts for rapid price movements.
 
 ## 📊 Features
 
-- **Real-time Data**: Auto-updates every 5 seconds from Binance Futures API
+- **Real-time Data**: Auto-updates every 5 seconds from Bybit API
 - **Top 20 Rankings**: Toggle between top gainers and top losers
 - **Smart Alerts**: Detects ≥3% drops within 1 hour for top gainers
 - **Visual Notifications**: Red blinking alerts with optional sound/browser notifications
 - **Sortable Table**: Click column headers to sort data
 - **Modern UI**: Hyperliquid/CoinGlass-inspired dashboard design
+- **Authenticated API**: Uses your personal Bybit API credentials for higher rate limits
 
 ## 🛠️ Tech Stack
 
@@ -17,7 +18,7 @@ A real-time cryptocurrency monitoring system that tracks all Binance USDT perpet
 - Node.js + Express
 - TypeScript
 - In-memory caching
-- Binance Futures API proxy
+- Bybit V5 API integration with HMAC authentication
 
 ### Frontend
 - Next.js 14 (App Router)
