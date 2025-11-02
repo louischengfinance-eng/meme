@@ -1,13 +1,15 @@
 {
   "name": "crypto-monitoring-system",
   "version": "1.0.0",
-  "description": "Real-time cryptocurrency monitoring dashboard for Binance USDT perpetual contracts",
+  "description": "Real-time cryptocurrency monitoring dashboard for Bybit USDT perpetual contracts",
   "private": true,
   "workspaces": [
     "backend",
     "frontend"
   ],
   "scripts": {
+    "deploy": "node deploy.js",
+    "deploy:prod": "node deploy.js --production",
     "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
@@ -18,10 +20,12 @@
   },
   "keywords": [
     "crypto",
-    "binance",
+    "bybit",
     "monitoring",
     "dashboard",
-    "trading"
+    "trading",
+    "perpetual",
+    "futures"
   ],
   "author": "",
   "license": "MIT"
